@@ -50,8 +50,8 @@ def create_vector_store(text):
 def generate_sql_from_query(user_query, context_docs, role_context):
     llm = GoogleGenerativeAI(model="gemini-pro")
 
-    # Combine context
-    context = "\n\n".join([doc.page_content for doc in context_docs])
+    # Combine context - add a check to ensure doc has 'page_content' attribute
+    context = "\n\n".join([doc.page_content for doc in context_docs if hasattr(doc, 'page_content')])
     full_prompt = f"""
 You are a helpful assistant that writes SQL queries.
 
