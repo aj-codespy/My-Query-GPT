@@ -6,12 +6,6 @@ from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import CharacterTextSplitter # Keep for vector store
-# Corrected import for KnowledgeGraphIndex
-from llama_index.core import KnowledgeGraphIndex
-# Import LlamaIndex Document (no longer needed for this approach)
-# from llama_index.core import Document as LlamaIndexDocument
-# Import LlamaIndex SentenceSplitter for graph index
-from llama_index.core.node_parser import SentenceSplitter
 import tempfile
 import os
 
@@ -19,10 +13,16 @@ import os
 st.set_page_config(page_title="SQL RAG Generator", layout="wide")
 st.title("📊 SQL Query Generator using Schema + RAG")
 
-# ---- Upload Inputs ----
-uploaded_pdf = st.file_uploader("📎 Upload Schema PDF", type=["pdf"])
-role_context = st.text_area("🧠 Role Context (describe the data, business logic, etc)", height=150)
-user_query = st.text_input("🔍 Ask your SQL query in natural language")
+# Use a form to group inputs and add a submit button
+with st.form("sql_generator_form"):
+    # ---- Upload Inputs ----
+    uploaded_pdf = st.file_uploader("📎 Upload Schema PDF", type=["pdf"])
+    role_context = st.text_area("🧠 Role Context (describe the data, business logic, etc)", height=150)
+    user_query = st.text_input("🔍 Ask your SQL query in natural language")
+
+    # Add a submit button
+    submit_button = st.form_submit_button("Generate SQL")
+
 
 # ---- Gemini API Setup ----
 if "GOOGLE_API_KEY" not in st.secrets:
@@ -46,17 +46,6 @@ def create_vector_store(text):
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vectorstore = FAISS.from_documents(docs, embedding=embeddings)
     return vectorstore
-
-def create_graph_index(text):
-    # Use LlamaIndex's SentenceSplitter to split text into nodes
-    # Nodes are a type of LlamaIndex document/chunk compatible with LlamaIndex indexes
-    splitter = SentenceSplitter(chunk_size=1000, chunk_overlap=100)
-    nodes = splitter.get_nodes_from_text(text) # Use get_nodes_from_text for a single text string
-
-    llm = GoogleGenerativeAI(model="gemini-pro")
-    # Pass the LlamaIndex nodes directly to from_documents
-    graph_index = KnowledgeGraphIndex.from_documents(nodes, llm=llm)
-    return graph_index
 
 def generate_sql_from_query(user_query, context_docs, role_context):
     llm = GoogleGenerativeAI(model="gemini-pro")
@@ -82,39 +71,25 @@ Write a syntactically correct SQL query that will return the desired result. Onl
     return llm.invoke(full_prompt)
 
 # ---- Main Processing ----
-if uploaded_pdf and user_query and role_context:
+# Only process if the submit button is clicked and inputs are provided
+if submit_button and uploaded_pdf and user_query and role_context:
     with st.spinner("Processing PDF and generating SQL..."):
         pdf_text = extract_pdf_text(uploaded_pdf)
 
-        # Create both vector and graph indexes
-        # Vector store still uses LangChain's splitter and documents
+        # Create vector store
         vector_store = create_vector_store(pdf_text)
         retriever = vector_store.as_retriever(search_type="similarity", k=4)
         similar_docs = retriever.get_relevant_documents(user_query)
 
-        # Create graph index using LlamaIndex's splitter and nodes
-        graph_index = create_graph_index(pdf_text)
-
-        # Getting a summary from the graph index might require a query engine
-        # For now, we'll keep the placeholder or implement a simple query if needed.
-        # Example of getting a simple response from the graph (might need tuning)
-        try:
-            graph_query_engine = graph_index.as_query_engine()
-            graph_summary_response = graph_query_engine.query(f"Summarize key entities and relationships related to: {user_query}")
-            graph_summary = str(graph_summary_response)
-        except Exception as e:
-             graph_summary = f"Could not generate graph insight: {e}"
-             st.warning(f"Warning: Could not generate graph insight. Error: {e}")
-
-
-        # Add graph knowledge summary into role_context
-        extended_context = role_context + "\n\n" + "Graph Insight:\n" + graph_summary
-
-        # Generate SQL
-        sql_output = generate_sql_from_query(user_query, similar_docs, extended_context)
+        # Generate SQL using only vector store context and role context
+        sql_output = generate_sql_from_query(user_query, similar_docs, role_context) # Pass original role_context
 
         st.subheader("🧾 Generated SQL Query")
         st.code(sql_output, language="sql")
         st.download_button("📋 Copy SQL to Clipboard", data=sql_output, file_name="query.sql", mime="text/sql")
-else:
-    st.info("⬆️ Upload the schema PDF, add role context, and enter your query to generate SQL.")
+elif submit_button and (not uploaded_pdf or not user_query or not role_context):
+    st.warning("⬆️ Please upload the schema PDF, add role context, and enter your query.")
+
+# The initial info message is now handled by the warning within the submit block
+# else:
+#     st.info("⬆️ Upload the schema PDF, add role context, and enter your query to generate SQL.")
