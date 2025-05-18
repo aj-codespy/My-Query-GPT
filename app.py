@@ -8,6 +8,8 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import CharacterTextSplitter
 # Corrected import for KnowledgeGraphIndex
 from llama_index.core import KnowledgeGraphIndex
+# Import LlamaIndex Document
+from llama_index.core import Document as LlamaIndexDocument
 import tempfile
 import os
 
@@ -36,6 +38,7 @@ def extract_pdf_text(pdf_file):
     return text
 
 def create_vector_store(text):
+    # Use LangChain's CharacterTextSplitter for vector store (compatible with FAISS/LangChain)
     splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = splitter.create_documents([text])
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
@@ -43,11 +46,17 @@ def create_vector_store(text):
     return vectorstore
 
 def create_graph_index(text):
+    # Use LangChain's CharacterTextSplitter to split text
     splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    docs = splitter.create_documents([text])
+    langchain_docs = splitter.create_documents([text])
+
+    # Convert LangChain Documents to LlamaIndex Documents
+    # LlamaIndex's from_documents expects its own Document type
+    llama_index_docs = [LlamaIndexDocument(text=doc.page_content, metadata=doc.metadata) for doc in langchain_docs]
+
     llm = GoogleGenerativeAI(model="gemini-pro")
-    # Use KnowledgeGraphIndex from llama_index.core
-    graph_index = KnowledgeGraphIndex.from_documents(docs, llm=llm)
+    # Use KnowledgeGraphIndex from llama_index.core with LlamaIndex Documents
+    graph_index = KnowledgeGraphIndex.from_documents(llama_index_docs, llm=llm)
     return graph_index
 
 def generate_sql_from_query(user_query, context_docs, role_context):
@@ -83,16 +92,22 @@ if uploaded_pdf and user_query and role_context:
         retriever = vector_store.as_retriever(search_type="similarity", k=4)
         similar_docs = retriever.get_relevant_documents(user_query)
 
-        # Optional: You can use graph index output to add to retrieval later
-        # Ensure llama_index is installed for create_graph_index
+        # Create graph index using LlamaIndex Documents
         graph_index = create_graph_index(pdf_text)
-        # The method to get summary might vary or require a query engine
-        # For demonstration, let's assume a simple summary extraction or you might need to build a query engine for the graph
-        # As a placeholder, let's just acknowledge the graph index creation
-        graph_summary = "Knowledge graph index created." # Replace with actual graph query logic if needed
+
+        # Getting a summary from the graph index might require a query engine
+        # For now, we'll keep the placeholder or implement a simple query if needed.
+        # Example of getting a simple response from the graph (might need tuning)
+        try:
+            graph_query_engine = graph_index.as_query_engine()
+            graph_summary_response = graph_query_engine.query(f"Summarize key entities and relationships related to: {user_query}")
+            graph_summary = str(graph_summary_response)
+        except Exception as e:
+             graph_summary = f"Could not generate graph insight: {e}"
+             st.warning(f"Warning: Could not generate graph insight. Error: {e}")
+
 
         # Add graph knowledge summary into role_context
-        # Note: Integrating graph knowledge effectively into the prompt might need more sophisticated logic
         extended_context = role_context + "\n\n" + "Graph Insight:\n" + graph_summary
 
         # Generate SQL
