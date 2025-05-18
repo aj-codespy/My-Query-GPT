@@ -1,10 +1,13 @@
 import streamlit as st
 from PyPDF2 import PdfReader
 from langchain_community.vectorstores import FAISS
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, GoogleGenerativeAI
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain_community.document_loaders import PyPDFLoader
+# Import ChatGoogleGenerativeAI instead of GoogleGenerativeAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+# Import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains import RetrievalQA # Keep if needed for other purposes, but not used in the main generation chain now
+from langchain.prompts import PromptTemplate # Keep if needed for other purposes
+from langchain_community.document_loaders import PyPDFLoader # Keep if needed
 from langchain.text_splitter import CharacterTextSplitter # Keep for vector store
 import tempfile
 import os
@@ -26,21 +29,23 @@ with st.form("sql_generator_form"):
 
 
 # ---- Gemini API Setup ----
-if "GOOGLE_API_KEY" not in st.secrets:
-    st.warning("Please add your Gemini API key in Streamlit secrets as `GOOGLE_API_KEY`")
-    st.stop()
-
-os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+# Using the provided API key directly as requested.
+# NOTE: For production applications, it is highly recommended to use Streamlit secrets
+# (st.secrets["GOOGLE_API_KEY"]) instead of hardcoding the API key for security.
+GOOGLE_API_KEY = 'AIzaSyDtB4bETfNDyvpzA_NnBKMrr56rdiOE8bQ'
+os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 # ---- Helper Functions ----
-def extract_pdf_text(pdf_file):
+# Use st.cache_resource to cache the vector store
+# It will only re-run if the 'pdf_file' content changes (i.e., a new file is uploaded)
+@st.cache_resource
+def create_vector_store(pdf_file):
+    # Read text from the uploaded PDF file
     reader = PdfReader(pdf_file)
     text = ""
     for page in reader.pages:
         text += page.extract_text() + "\n"
-    return text
 
-def create_vector_store(text):
     # Use LangChain's CharacterTextSplitter for vector store (compatible with FAISS/LangChain)
     splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = splitter.create_documents([text])
@@ -50,30 +55,49 @@ def create_vector_store(text):
     return vectorstore
 
 def generate_sql_from_query(user_query, context_docs, role_context):
-    # Use the specified model: gemini-2.0-flash
-    llm = GoogleGenerativeAI(model="gemini-2.0-flash")
+    # Use ChatGoogleGenerativeAI with gemini-1.5-flash
+    llm = ChatGoogleGenerativeAI(
+        model='gemini-2.0-flash',
+        temperature=0,
+        google_api_key=GOOGLE_API_KEY, # Use the hardcoded key
+        max_tokens=None,
+        timeout=30,
+        max_retries=2
+    )
 
-    # Combine context - add a check to ensure doc has 'page_content' attribute
+    # Combine context documents into a single string
     context = "\n\n".join([doc.page_content for doc in context_docs if hasattr(doc, 'page_content')])
-    full_prompt = f"""
-You are a helpful assistant that writes SQL queries.
+
+    # Create a ChatPromptTemplate
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", f"""You are a helpful assistant that writes SQL queries.
 
 Given the following:
 1. Role Context:
-{role_context}
+{{role_context}}
 
 2. Schema Documentation:
-{context}
-
-3. User Query:
-{user_query}
+{{schema_documentation}}
 
 Write a syntactically correct SQL query that will return the desired result. Only output the SQL code without explanation.
-"""
+"""),
+        ("human", "{user_query}")
+    ])
+
+    # Create a simple chain
+    chain = prompt | llm
+
     try:
-        return llm.invoke(full_prompt)
+        # Invoke the chain with the necessary inputs
+        response = chain.invoke({
+            "role_context": role_context,
+            "schema_documentation": context,
+            "user_query": user_query
+        })
+        # The response from ChatGoogleGenerativeAI is a ChatMessage object
+        return response.content # Extract the string content
     except google.api_core.exceptions.NotFound as e:
-        st.error(f"Error: The requested Gemini model was not found. Please check your Google API key, the model name ('gemini-2.0-flash'), and ensure the model is available in your region. Details: {e}")
+        st.error(f"Error: The requested Gemini model was not found. Please check your Google API key, the model name ('gemini-1.5-flash'), and ensure the model is available in your region. Details: {e}")
         return None # Return None or an empty string to indicate failure
     except Exception as e:
         st.error(f"An unexpected error occurred during API call: {e}")
@@ -84,15 +108,15 @@ Write a syntactically correct SQL query that will return the desired result. Onl
 # Only process if the submit button is clicked and inputs are provided
 if submit_button and uploaded_pdf and user_query and role_context:
     with st.spinner("Processing PDF and generating SQL..."):
-        pdf_text = extract_pdf_text(uploaded_pdf)
+        # Create vector store (cached)
+        vector_store = create_vector_store(uploaded_pdf)
 
-        # Create vector store
-        vector_store = create_vector_store(pdf_text)
+        # Retrieve relevant documents from the vector store
         retriever = vector_store.as_retriever(search_type="similarity", k=4)
         similar_docs = retriever.get_relevant_documents(user_query)
 
-        # Generate SQL using only vector store context and role context
-        sql_output = generate_sql_from_query(user_query, similar_docs, role_context) # Pass original role_context
+        # Generate SQL using vector store context and role context
+        sql_output = generate_sql_from_query(user_query, similar_docs, role_context)
 
         # Only display output if sql_output is not None (i.e., API call was successful)
         if sql_output is not None:
@@ -102,3 +126,4 @@ if submit_button and uploaded_pdf and user_query and role_context:
 
 elif submit_button and (not uploaded_pdf or not user_query or not role_context):
     st.warning("⬆️ Please upload the schema PDF, add role context, and enter your query.")
+
