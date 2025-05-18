@@ -8,6 +8,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import CharacterTextSplitter # Keep for vector store
 import tempfile
 import os
+import google.api_core.exceptions # Import the specific exception
 
 # ---- Page Setup ----
 st.set_page_config(page_title="SQL RAG Generator", layout="wide")
@@ -43,12 +44,14 @@ def create_vector_store(text):
     # Use LangChain's CharacterTextSplitter for vector store (compatible with FAISS/LangChain)
     splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = splitter.create_documents([text])
+    # Embedding model remains the same
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vectorstore = FAISS.from_documents(docs, embedding=embeddings)
     return vectorstore
 
 def generate_sql_from_query(user_query, context_docs, role_context):
-    llm = GoogleGenerativeAI(model="gemini-pro")
+    # Use the specified model: gemini-2.0-flash
+    llm = GoogleGenerativeAI(model="gemini-2.0-flash")
 
     # Combine context - add a check to ensure doc has 'page_content' attribute
     context = "\n\n".join([doc.page_content for doc in context_docs if hasattr(doc, 'page_content')])
@@ -67,8 +70,15 @@ Given the following:
 
 Write a syntactically correct SQL query that will return the desired result. Only output the SQL code without explanation.
 """
+    try:
+        return llm.invoke(full_prompt)
+    except google.api_core.exceptions.NotFound as e:
+        st.error(f"Error: The requested Gemini model was not found. Please check your Google API key, the model name ('gemini-2.0-flash'), and ensure the model is available in your region. Details: {e}")
+        return None # Return None or an empty string to indicate failure
+    except Exception as e:
+        st.error(f"An unexpected error occurred during API call: {e}")
+        return None
 
-    return llm.invoke(full_prompt)
 
 # ---- Main Processing ----
 # Only process if the submit button is clicked and inputs are provided
@@ -84,12 +94,11 @@ if submit_button and uploaded_pdf and user_query and role_context:
         # Generate SQL using only vector store context and role context
         sql_output = generate_sql_from_query(user_query, similar_docs, role_context) # Pass original role_context
 
-        st.subheader("🧾 Generated SQL Query")
-        st.code(sql_output, language="sql")
-        st.download_button("📋 Copy SQL to Clipboard", data=sql_output, file_name="query.sql", mime="text/sql")
+        # Only display output if sql_output is not None (i.e., API call was successful)
+        if sql_output is not None:
+            st.subheader("🧾 Generated SQL Query")
+            st.code(sql_output, language="sql")
+            st.download_button("📋 Copy SQL to Clipboard", data=sql_output, file_name="query.sql", mime="text/sql")
+
 elif submit_button and (not uploaded_pdf or not user_query or not role_context):
     st.warning("⬆️ Please upload the schema PDF, add role context, and enter your query.")
-
-# The initial info message is now handled by the warning within the submit block
-# else:
-#     st.info("⬆️ Upload the schema PDF, add role context, and enter your query to generate SQL.")
