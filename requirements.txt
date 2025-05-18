@@ -9,11 +9,9 @@ idna==3.10
 Jinja2==3.1.6
 jsonpointer==3.0.0
 jsonschema==4.23.0
-langchain-google-genai
 jsonschema-specifications==2025.4.1
 markdown-it-py==3.0.0
 MarkupSafe==3.0.2
-langchain-community
 marshmallow==3.26.1
 multidict==6.4.3
 narwhals==1.39.1
@@ -28,11 +26,16 @@ rsa==4.9.1
 typing-inspect==0.9.0
 tzdata==2025.2
 urllib3==2.4.0
-streamlit
-PyPDF2
-langchain
-faiss-cpu
-google-generativeai
 yarl==1.20.0
 grpcio==1.71.0
 grpcio-status==1.62.3
+
+streamlit
+PyPDF2
+langchain
+langchain-community
+langchain-google-genai
+faiss-cpu
+google-generativeai
+llama-index # Added for KnowledgeGraphIndex
+
