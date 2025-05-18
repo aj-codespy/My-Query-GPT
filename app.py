@@ -5,11 +5,13 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, GoogleGenerativ
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import CharacterTextSplitter
+from langchain.text_splitter import CharacterTextSplitter # Keep for vector store
 # Corrected import for KnowledgeGraphIndex
 from llama_index.core import KnowledgeGraphIndex
-# Import LlamaIndex Document
-from llama_index.core import Document as LlamaIndexDocument
+# Import LlamaIndex Document (no longer needed for this approach)
+# from llama_index.core import Document as LlamaIndexDocument
+# Import LlamaIndex SentenceSplitter for graph index
+from llama_index.core.node_parser import SentenceSplitter
 import tempfile
 import os
 
@@ -46,17 +48,14 @@ def create_vector_store(text):
     return vectorstore
 
 def create_graph_index(text):
-    # Use LangChain's CharacterTextSplitter to split text
-    splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    langchain_docs = splitter.create_documents([text])
-
-    # Convert LangChain Documents to LlamaIndex Documents
-    # LlamaIndex's from_documents expects its own Document type
-    llama_index_docs = [LlamaIndexDocument(text=doc.page_content, metadata=doc.metadata) for doc in langchain_docs]
+    # Use LlamaIndex's SentenceSplitter to split text into nodes
+    # Nodes are a type of LlamaIndex document/chunk compatible with LlamaIndex indexes
+    splitter = SentenceSplitter(chunk_size=1000, chunk_overlap=100)
+    nodes = splitter.get_nodes_from_text(text) # Use get_nodes_from_text for a single text string
 
     llm = GoogleGenerativeAI(model="gemini-pro")
-    # Use KnowledgeGraphIndex from llama_index.core with LlamaIndex Documents
-    graph_index = KnowledgeGraphIndex.from_documents(llama_index_docs, llm=llm)
+    # Pass the LlamaIndex nodes directly to from_documents
+    graph_index = KnowledgeGraphIndex.from_documents(nodes, llm=llm)
     return graph_index
 
 def generate_sql_from_query(user_query, context_docs, role_context):
@@ -88,11 +87,12 @@ if uploaded_pdf and user_query and role_context:
         pdf_text = extract_pdf_text(uploaded_pdf)
 
         # Create both vector and graph indexes
+        # Vector store still uses LangChain's splitter and documents
         vector_store = create_vector_store(pdf_text)
         retriever = vector_store.as_retriever(search_type="similarity", k=4)
         similar_docs = retriever.get_relevant_documents(user_query)
 
-        # Create graph index using LlamaIndex Documents
+        # Create graph index using LlamaIndex's splitter and nodes
         graph_index = create_graph_index(pdf_text)
 
         # Getting a summary from the graph index might require a query engine
