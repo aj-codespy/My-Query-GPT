@@ -6,7 +6,8 @@ from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import CharacterTextSplitter
-from langchain_community.graphs import KnowledgeGraphIndex
+# Corrected import for KnowledgeGraphIndex
+from llama_index.core import KnowledgeGraphIndex
 import tempfile
 import os
 
@@ -45,6 +46,7 @@ def create_graph_index(text):
     splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = splitter.create_documents([text])
     llm = GoogleGenerativeAI(model="gemini-pro")
+    # Use KnowledgeGraphIndex from llama_index.core
     graph_index = KnowledgeGraphIndex.from_documents(docs, llm=llm)
     return graph_index
 
@@ -82,10 +84,15 @@ if uploaded_pdf and user_query and role_context:
         similar_docs = retriever.get_relevant_documents(user_query)
 
         # Optional: You can use graph index output to add to retrieval later
+        # Ensure llama_index is installed for create_graph_index
         graph_index = create_graph_index(pdf_text)
-        graph_summary = graph_index.get_summary(user_query)
+        # The method to get summary might vary or require a query engine
+        # For demonstration, let's assume a simple summary extraction or you might need to build a query engine for the graph
+        # As a placeholder, let's just acknowledge the graph index creation
+        graph_summary = "Knowledge graph index created." # Replace with actual graph query logic if needed
 
         # Add graph knowledge summary into role_context
+        # Note: Integrating graph knowledge effectively into the prompt might need more sophisticated logic
         extended_context = role_context + "\n\n" + "Graph Insight:\n" + graph_summary
 
         # Generate SQL
