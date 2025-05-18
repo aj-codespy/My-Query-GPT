@@ -1,13 +1,12 @@
 import streamlit as st
 from PyPDF2 import PdfReader
-from langchain.vectorstores import FAISS
-from langchain.embeddings import GoogleGenerativeAIEmbeddings
-from langchain.llms import GoogleGenerativeAI
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, GoogleGenerativeAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.graphs import KnowledgeGraphIndex
+from langchain_community.graphs import KnowledgeGraphIndex
 import tempfile
 import os
 
